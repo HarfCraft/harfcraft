@@ -33,7 +33,6 @@ pub struct FileTreeNode {
 #[derive(Clone)]
 pub struct VisibleFileNode {
     pub index: usize,
-    pub id: SharedString,
     pub path: PathBuf,
     pub depth: usize,
     pub name: SharedString,
@@ -198,16 +197,15 @@ impl FileTree {
 
     fn rebuild_visible_rows(&mut self) {
         self.visible_nodes.clear();
-        let mut stack = Vec::new();
-        stack.push((self.root.clone(), 0));
+        let mut stack = Vec::with_capacity(32);
+        stack.push((&self.root, 0));
         while let Some((path, depth)) = stack.pop() {
-            let Some(node) = self.nodes.get(&path) else {
+            let Some(node) = self.nodes.get(path) else {
                 continue;
             };
-            let is_expanded = self.expanded_dirs.contains(&path);
+            let is_expanded = self.expanded_dirs.contains(path);
             self.visible_nodes.push(VisibleFileNode {
                 index: self.visible_nodes.len(),
-                id: SharedString::from(path.to_string_lossy().to_string()),
                 path: path.clone(),
                 depth,
                 is_dir: node.is_dir,
@@ -217,7 +215,7 @@ impl FileTree {
             });
             if node.is_dir && is_expanded {
                 for child in node.children.iter().rev() {
-                    stack.push((child.clone(), depth + 1));
+                    stack.push((&child, depth + 1));
                 }
             }
         }
@@ -247,26 +245,30 @@ impl Render for FileTree {
                                 Icon::new(IconName::Folder)
                             };
                             // let path = node.path.clone();
-                            let item = ListItem::new(node.id.clone()).w_full().p_0().h_8().child(
-                                h_flex()
-                                    .child(h_flex().children((0..node.depth).into_iter().map(
-                                        |_| {
-                                            div()
-                                                .h_8()
-                                                .w_4()
-                                                .border_color(cx.theme().secondary)
-                                                .border_r_1()
-                                                .child("")
-                                        },
-                                    )))
-                                    .child(
-                                        h_flex()
-                                            .pl_2()
-                                            .gap_2()
-                                            .child(icon)
-                                            .child(node.name.clone()),
-                                    ),
-                            );
+                            let item = ListItem::new(format!("tree-item-{}", node.index))
+                                .w_full()
+                                .p_0()
+                                .h_8()
+                                .child(
+                                    h_flex()
+                                        .child(h_flex().children((0..node.depth).into_iter().map(
+                                            |_| {
+                                                div()
+                                                    .h_8()
+                                                    .w_4()
+                                                    .border_color(cx.theme().secondary)
+                                                    .border_r_1()
+                                                    .child("")
+                                            },
+                                        )))
+                                        .child(
+                                            h_flex()
+                                                .pl_2()
+                                                .gap_2()
+                                                .child(icon)
+                                                .child(node.name.clone()),
+                                        ),
+                                );
                             items.push(item);
                         }
                         items

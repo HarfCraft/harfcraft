@@ -3042,6 +3042,8 @@ version = "0.1.0"
 dependencies = [
  "directories",
  "gpui-kit",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-panic",
  "tracing-subscriber",

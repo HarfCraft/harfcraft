@@ -1,5 +1,5 @@
 use crate::{
-    APP_NAME,
+    APP_DESCRIPTION, APP_NAME,
     actions::{OpenWorkspace, WORKBENCH_CONTEXT},
     dragged_workspace::DraggedWorkspace,
     prelude::*,
@@ -7,10 +7,12 @@ use crate::{
 };
 use gpui_kit::{
     PathPromptOptions,
+    base::StyledExt,
     component::{
         Icon, TitleBar,
+        label::Label,
         menu::DropdownMenu,
-        status_bar::StatusBar,
+        separator::Separator,
         tab::{Tab, TabBar},
         text::Text,
     },
@@ -202,8 +204,50 @@ impl Render for Workbench {
             )
             .when(
                 self.active.is_none_or(|i| i >= self.workspaces.len()),
-                |this| this.child(div().size_full().child("Welcome screen")),
+                |this| {
+                    this.child(
+                        v_flex()
+                            .justify_center()
+                            .items_stretch()
+                            .w_128()
+                            .h_full()
+                            .mx_auto()
+                            .gap_4()
+                            .text_center()
+                            .child(Label::new(APP_NAME).text_3xl().font_bold())
+                            .child(
+                                Label::new(APP_DESCRIPTION)
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground),
+                            )
+                            .child(
+                                Button::new("open-workspace")
+                                    .ghost()
+                                    .label("Open Workspace")
+                                    .icon(IconName::FolderOpen)
+                                    .tooltip_with_action(
+                                        "Open workspace",
+                                        &OpenWorkspace,
+                                        Some(WORKBENCH_CONTEXT),
+                                    )
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_workspace(&OpenWorkspace, window, cx);
+                                    })),
+                            )
+                            .child(
+                                h_flex()
+                                    .w_128()
+                                    .gap_2()
+                                    .child(Separator::horizontal().flex_1())
+                                    .child(
+                                        Label::new("RECENT PROJECTS")
+                                            .text_color(cx.theme().muted_foreground)
+                                            .text_xs(),
+                                    )
+                                    .child(Separator::horizontal().flex_1()),
+                            ),
+                    )
+                },
             )
-            .child(StatusBar::new().child("Status"))
     }
 }

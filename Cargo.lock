@@ -3040,8 +3040,10 @@ dependencies = [
 name = "harfcraft"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "directories",
  "gpui-kit",
+ "ignore",
  "serde",
  "serde_json",
  "tracing",

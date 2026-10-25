@@ -1,10 +1,16 @@
 use crate::{actions::FILE_TREE_CONTEXT, prelude::*};
-use gpui_kit::{UniformListScrollHandle, component::list::ListItem, uniform_list};
+use gpui_kit::{
+    UniformListScrollHandle,
+    component::{list::ListItem, progress::Progress},
+    uniform_list,
+};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
 };
+
+const BATCH_SIZE: usize = 64;
 
 pub struct FileTree {
     pub root: PathBuf,
@@ -13,6 +19,7 @@ pub struct FileTree {
     pub visible_nodes: Vec<VisibleFileNode>,
     pub focus: FocusHandle,
     pub scroll_handle: UniformListScrollHandle,
+    loading: bool,
 }
 
 pub struct FileTreeNode {
@@ -76,6 +83,7 @@ impl Panel for FileTree {
 impl FileTree {
     pub fn new(root: PathBuf, cx: &mut Context<Self>) -> Self {
         let mut file_tree = Self {
+            loading: true,
             nodes: HashMap::new(),
             expanded_dirs: HashSet::from([root.clone()]),
             visible_nodes: Vec::new(),
@@ -109,27 +117,38 @@ impl FileTree {
 
     pub fn refresh_from_disk(&mut self, cx: &mut Context<Self>) {
         let root = self.root.clone();
+        let (tx, rx) = async_channel::unbounded::<Vec<(PathBuf, FileTreeNode)>>();
+
+        cx.background_executor()
+            .spawn(async move { Self::reload_nodes(root, tx).await })
+            .detach();
+
         cx.spawn(async move |file_tree, cx| {
-            let new_nodes = cx
-                .background_executor()
-                .spawn(async move { Self::reload_nodes(root) })
-                .await;
+            while let Ok(batch) = rx.recv().await {
+                _ = file_tree.update(cx, |file_tree, cx| {
+                    file_tree.nodes.extend(batch);
+                    file_tree.rebuild_visible_rows();
+                    cx.notify();
+                });
+            }
             _ = file_tree.update(cx, |file_tree, cx| {
-                file_tree.nodes = new_nodes;
-                file_tree.rebuild_visible_rows();
+                file_tree.loading = false;
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn reload_nodes(root: PathBuf) -> HashMap<PathBuf, FileTreeNode> {
-        let mut nodes = HashMap::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(root.clone());
-        while let Some(path) = queue.pop_front() {
+    async fn reload_nodes(root: PathBuf, tx: async_channel::Sender<Vec<(PathBuf, FileTreeNode)>>) {
+        let mut batch = Vec::new();
+        for result in ignore::Walk::new(&root) {
+            let Ok(entry) = result else {
+                continue;
+            };
+            let path = entry.path().to_path_buf();
             let mut children = Vec::new();
-            let is_dir = path.is_dir() || path == root;
+            let is_dir = entry.file_type().map_or(false, |ft| ft.is_dir()) || path == root;
+            let name = SharedString::from(entry.file_name().to_string_lossy());
 
             if is_dir {
                 if let Ok(entries) = fs::read_dir(&path) {
@@ -137,24 +156,18 @@ impl FileTree {
                         .filter_map(|e| {
                             e.ok().map(|e| {
                                 let p = e.path();
-                                let is_dir = p.is_dir();
+                                let is_dir = e.file_type().map_or(false, |ft| ft.is_dir());
                                 (p, is_dir, e.file_name())
                             })
                         })
                         .collect();
                     entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
                     for (p, _, _) in entries {
-                        queue.push_back(p.clone());
                         children.push(p);
                     }
                 }
             }
 
-            let name = SharedString::from(
-                path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-            );
             let extension = if is_dir {
                 None
             } else {
@@ -162,7 +175,7 @@ impl FileTree {
                     .and_then(|s| s.to_str())
                     .map(|ext| SharedString::from(ext.to_lowercase()))
             };
-            nodes.insert(
+            batch.push((
                 path.clone(),
                 FileTreeNode {
                     path,
@@ -171,9 +184,16 @@ impl FileTree {
                     children,
                     is_dir,
                 },
-            );
+            ));
+            if batch.len() >= BATCH_SIZE {
+                if tx.send(std::mem::take(&mut batch)).await.is_err() {
+                    break;
+                }
+            }
         }
-        nodes
+        if !batch.is_empty() {
+            _ = tx.send(batch).await;
+        }
     }
 
     fn rebuild_visible_rows(&mut self) {
@@ -210,6 +230,9 @@ impl Render for FileTree {
             .track_focus(&self.focus)
             .key_context(FILE_TREE_CONTEXT)
             .size_full()
+            .when(self.loading, |this| {
+                this.child(Progress::new("file-tree-loader").h_1().loading(true))
+            })
             .child(
                 uniform_list("file-tree", self.visible_nodes.len(), {
                     let visible = self.visible_nodes.clone();
@@ -224,36 +247,26 @@ impl Render for FileTree {
                                 Icon::new(IconName::Folder)
                             };
                             // let path = node.path.clone();
-                            let item = ListItem::new(node.id.clone())
-                                .w_full()
-                                .p_0()
-                                .h_8()
-                                // .on_click(move |_, window, cx| {
-                                //     let path = path.clone();
-                                // })
-                                // .on_key_down(move |_, window, cx| {
-                                //     let path = path.clone();
-                                // })
-                                .child(
-                                    h_flex()
-                                        .child(h_flex().children((0..node.depth).into_iter().map(
-                                            |_| {
-                                                div()
-                                                    .h_8()
-                                                    .w_4()
-                                                    .border_color(cx.theme().secondary)
-                                                    .border_r_1()
-                                                    .child("")
-                                            },
-                                        )))
-                                        .child(
-                                            h_flex()
-                                                .pl_2()
-                                                .gap_2()
-                                                .child(icon)
-                                                .child(node.name.clone()),
-                                        ),
-                                );
+                            let item = ListItem::new(node.id.clone()).w_full().p_0().h_8().child(
+                                h_flex()
+                                    .child(h_flex().children((0..node.depth).into_iter().map(
+                                        |_| {
+                                            div()
+                                                .h_8()
+                                                .w_4()
+                                                .border_color(cx.theme().secondary)
+                                                .border_r_1()
+                                                .child("")
+                                        },
+                                    )))
+                                    .child(
+                                        h_flex()
+                                            .pl_2()
+                                            .gap_2()
+                                            .child(icon)
+                                            .child(node.name.clone()),
+                                    ),
+                            );
                             items.push(item);
                         }
                         items

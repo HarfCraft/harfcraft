@@ -1,9 +1,5 @@
 use crate::{actions::FILE_TREE_CONTEXT, prelude::*};
-use gpui_kit::{
-    UniformListScrollHandle,
-    component::list::{List, ListItem},
-    uniform_list,
-};
+use gpui_kit::{UniformListScrollHandle, component::list::ListItem, uniform_list};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
@@ -209,7 +205,7 @@ impl FileTree {
 }
 
 impl Render for FileTree {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus)
             .key_context(FILE_TREE_CONTEXT)

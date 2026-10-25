@@ -10,7 +10,7 @@ pub struct Workspace {
     pub name: SharedString,
     dock_area: Entity<DockArea>,
     _dock_skin: Rc<DockSkin>,
-    file_tree: Entity<FileTree>,
+    _file_tree: Entity<FileTree>,
     focus: FocusHandle,
 }
 
@@ -22,13 +22,13 @@ impl Focusable for Workspace {
 
 impl Workspace {
     pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let file_tree = cx.new(|cx| FileTree::new(root.clone(), cx));
+        let _file_tree = cx.new(|cx| FileTree::new(root.clone(), cx));
         let (dock_area, _dock_skin) = DockSkin::dock_area("workspace-dock", None, window, cx);
         // _dock_skin.set_panel_style(gpui_kit::component::dock::PanelStyle::TabBar, cx);
         dock_area.update(cx, |dock_area, cx| {
             dock_area.set_dock(
                 gpui_kit::base::dock::DockPlacement::Left,
-                DockLayout::tabs().panel_view(panel_handle(file_tree.clone()), cx),
+                DockLayout::tabs().panel_view(panel_handle(_file_tree.clone()), cx),
                 window,
                 cx,
             );
@@ -43,7 +43,7 @@ impl Workspace {
             root,
             dock_area,
             _dock_skin,
-            file_tree,
+            _file_tree,
             focus: cx.focus_handle(),
         }
     }

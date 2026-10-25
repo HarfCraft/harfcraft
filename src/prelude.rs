@@ -1,5 +1,6 @@
 pub use gpui_kit::assets::IconName;
 pub use gpui_kit::component::ActiveTheme;
+pub use gpui_kit::component::Icon;
 pub use gpui_kit::component::Sizable;
 pub use gpui_kit::component::button::{Button, ButtonVariants};
 pub use gpui_kit::prelude::*;

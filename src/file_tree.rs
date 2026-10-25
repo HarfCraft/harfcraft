@@ -1,0 +1,270 @@
+use crate::{actions::FILE_TREE_CONTEXT, prelude::*};
+use gpui_kit::{
+    UniformListScrollHandle,
+    component::list::{List, ListItem},
+    uniform_list,
+};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    fs,
+    path::PathBuf,
+};
+
+pub struct FileTree {
+    pub root: PathBuf,
+    pub nodes: HashMap<PathBuf, FileTreeNode>,
+    pub expanded_dirs: HashSet<PathBuf>,
+    pub visible_nodes: Vec<VisibleFileNode>,
+    pub focus: FocusHandle,
+    pub scroll_handle: UniformListScrollHandle,
+}
+
+pub struct FileTreeNode {
+    pub path: PathBuf,
+    pub name: SharedString,
+    pub extension: Option<SharedString>,
+    pub children: Vec<PathBuf>,
+    pub is_dir: bool,
+}
+
+#[derive(Clone)]
+pub struct VisibleFileNode {
+    pub index: usize,
+    pub id: SharedString,
+    pub path: PathBuf,
+    pub depth: usize,
+    pub name: SharedString,
+    pub extension: Option<SharedString>,
+    pub is_dir: bool,
+    pub is_expanded: bool,
+}
+
+impl Focusable for FileTree {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl EventEmitter<PanelEvent> for FileTree {}
+
+impl BasePanel for FileTree {
+    fn panel_name(&self) -> &'static str {
+        "FileTree"
+    }
+    fn zoomable(&self, _cx: &App) -> bool {
+        false
+    }
+    fn closable(&self, _cx: &App) -> bool {
+        false
+    }
+}
+
+impl Panel for FileTree {
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        Icon::new(IconName::Folder)
+    }
+
+    fn zoom_control(&self, _cx: &App) -> Option<gpui_kit::component::dock::PanelControl> {
+        Some(gpui_kit::component::dock::PanelControl::Toolbar)
+    }
+
+    fn inner_padding(&self, _cx: &App) -> bool {
+        true
+    }
+
+    fn title_bar(&self, _cx: &App) -> bool {
+        false
+    }
+}
+
+impl FileTree {
+    pub fn new(root: PathBuf, cx: &mut Context<Self>) -> Self {
+        let mut file_tree = Self {
+            nodes: HashMap::new(),
+            expanded_dirs: HashSet::from([root.clone()]),
+            visible_nodes: Vec::new(),
+            root,
+            focus: cx.focus_handle(),
+            scroll_handle: UniformListScrollHandle::new(),
+        };
+        file_tree.refresh_from_disk(cx);
+        file_tree
+    }
+
+    pub fn toggle_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.expanded_dirs.contains(&path) {
+            self.collapse_directory(&path, cx);
+        } else {
+            self.expand_directory(path, cx);
+        }
+    }
+
+    pub fn expand_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.expanded_dirs.insert(path);
+        self.rebuild_visible_rows();
+        cx.notify();
+    }
+
+    pub fn collapse_directory(&mut self, path: &PathBuf, cx: &mut Context<Self>) {
+        self.expanded_dirs.remove(path);
+        self.rebuild_visible_rows();
+        cx.notify();
+    }
+
+    pub fn refresh_from_disk(&mut self, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        cx.spawn(async move |file_tree, cx| {
+            let new_nodes = cx
+                .background_executor()
+                .spawn(async move { Self::reload_nodes(root) })
+                .await;
+            _ = file_tree.update(cx, |file_tree, cx| {
+                file_tree.nodes = new_nodes;
+                file_tree.rebuild_visible_rows();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn reload_nodes(root: PathBuf) -> HashMap<PathBuf, FileTreeNode> {
+        let mut nodes = HashMap::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(root.clone());
+        while let Some(path) = queue.pop_front() {
+            let mut children = Vec::new();
+            let is_dir = path.is_dir() || path == root;
+
+            if is_dir {
+                if let Ok(entries) = fs::read_dir(&path) {
+                    let mut entries: Vec<_> = entries
+                        .filter_map(|e| {
+                            e.ok().map(|e| {
+                                let p = e.path();
+                                let is_dir = p.is_dir();
+                                (p, is_dir, e.file_name())
+                            })
+                        })
+                        .collect();
+                    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+                    for (p, _, _) in entries {
+                        queue.push_back(p.clone());
+                        children.push(p);
+                    }
+                }
+            }
+
+            let name = SharedString::from(
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+            );
+            let extension = if is_dir {
+                None
+            } else {
+                path.extension()
+                    .and_then(|s| s.to_str())
+                    .map(|ext| SharedString::from(ext.to_lowercase()))
+            };
+            nodes.insert(
+                path.clone(),
+                FileTreeNode {
+                    path,
+                    name,
+                    extension,
+                    children,
+                    is_dir,
+                },
+            );
+        }
+        nodes
+    }
+
+    fn rebuild_visible_rows(&mut self) {
+        self.visible_nodes.clear();
+        let mut stack = Vec::new();
+        stack.push((self.root.clone(), 0));
+        while let Some((path, depth)) = stack.pop() {
+            let Some(node) = self.nodes.get(&path) else {
+                continue;
+            };
+            let is_expanded = self.expanded_dirs.contains(&path);
+            self.visible_nodes.push(VisibleFileNode {
+                index: self.visible_nodes.len(),
+                id: SharedString::from(path.to_string_lossy().to_string()),
+                path: path.clone(),
+                depth,
+                is_dir: node.is_dir,
+                is_expanded,
+                name: node.name.clone(),
+                extension: node.extension.clone(),
+            });
+            if node.is_dir && is_expanded {
+                for child in node.children.iter().rev() {
+                    stack.push((child.clone(), depth + 1));
+                }
+            }
+        }
+    }
+}
+
+impl Render for FileTree {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .track_focus(&self.focus)
+            .key_context(FILE_TREE_CONTEXT)
+            .size_full()
+            .child(
+                uniform_list("file-tree", self.visible_nodes.len(), {
+                    let visible = self.visible_nodes.clone();
+                    move |range, _window, cx| {
+                        let mut items = Vec::with_capacity(range.len());
+                        for node in visible[range].to_vec() {
+                            let icon = if !node.is_dir {
+                                Icon::new(IconName::File)
+                            } else if node.is_expanded {
+                                Icon::new(IconName::FolderOpen)
+                            } else {
+                                Icon::new(IconName::Folder)
+                            };
+                            // let path = node.path.clone();
+                            let item = ListItem::new(node.id.clone())
+                                .w_full()
+                                .p_0()
+                                .h_8()
+                                // .on_click(move |_, window, cx| {
+                                //     let path = path.clone();
+                                // })
+                                // .on_key_down(move |_, window, cx| {
+                                //     let path = path.clone();
+                                // })
+                                .child(
+                                    h_flex()
+                                        .child(h_flex().children((0..node.depth).into_iter().map(
+                                            |_| {
+                                                div()
+                                                    .h_8()
+                                                    .w_4()
+                                                    .border_color(cx.theme().secondary)
+                                                    .border_r_1()
+                                                    .child("")
+                                            },
+                                        )))
+                                        .child(
+                                            h_flex()
+                                                .pl_2()
+                                                .gap_2()
+                                                .child(icon)
+                                                .child(node.name.clone()),
+                                        ),
+                                );
+                            items.push(item);
+                        }
+                        items
+                    }
+                })
+                .size_full()
+                .track_scroll(&self.scroll_handle),
+            )
+    }
+}

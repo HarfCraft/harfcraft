@@ -1,5 +1,5 @@
 use crate::{
-    APP_DESCRIPTION, APP_NAME,
+    APP_DESCRIPTION, WINDOW_NAME,
     actions::{OpenWorkspace, WORKBENCH_CONTEXT},
     dragged_workspace::DraggedWorkspace,
     prelude::*,
@@ -132,7 +132,7 @@ impl Render for Workbench {
                                     menu.menu("Open workspace", Box::new(OpenWorkspace))
                                 }),
                         )
-                        .child(Text::from(APP_NAME))
+                        .child(Text::from(WINDOW_NAME))
                         .child(
                             TabBar::new("workspaces-tab-bar")
                                 .segmented()
@@ -214,7 +214,7 @@ impl Render for Workbench {
                             .mx_auto()
                             .gap_4()
                             .text_center()
-                            .child(Label::new(APP_NAME).text_3xl().font_bold())
+                            .child(Label::new(WINDOW_NAME).text_3xl().font_bold())
                             .child(
                                 Label::new(APP_DESCRIPTION)
                                     .text_sm()

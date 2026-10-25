@@ -3,7 +3,7 @@ use gpui_kit::{
     base::Root,
     component::{Theme, ThemeRegistry, TitleBar},
 };
-use harfcraft::{APP_ID, APP_NAME, actions, logging, prelude::*, workbench::Workbench};
+use harfcraft::{APP_ID, WINDOW_NAME, actions, logging, prelude::*, workbench::Workbench};
 
 fn main() {
     logging::init();
@@ -13,7 +13,7 @@ fn main() {
             gpui_kit::init(cx);
             actions::init(cx);
 
-            cx.set_app_identity(APP_ID, APP_NAME);
+            cx.set_app_identity(APP_ID, WINDOW_NAME);
             cx.activate(true);
 
             let theme = ThemeRegistry::global(cx).default_dark_theme().clone();

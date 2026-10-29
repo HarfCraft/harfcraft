@@ -20,6 +20,7 @@ pub struct FileTree {
     visible_nodes: Vec<VisibleFileNode>,
     focus: FocusHandle,
     scroll_handle: UniformListScrollHandle,
+    selected: Option<PathBuf>,
     loading: bool,
 }
 
@@ -87,6 +88,7 @@ impl FileTree {
             nodes: HashMap::new(),
             expanded_dirs: HashSet::from([root.clone()]),
             visible_nodes: Vec::new(),
+            selected: None,
             root,
             focus: cx.focus_handle(),
             scroll_handle: UniformListScrollHandle::new(),
@@ -95,24 +97,19 @@ impl FileTree {
         file_tree
     }
 
-    pub fn toggle_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if self.expanded_dirs.contains(&path) {
-            self.collapse_directory(&path, cx);
-        } else {
-            self.expand_directory(path, cx);
+    pub fn activate_node(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let node = &self.nodes[&path];
+        self.selected = Some(path.clone());
+        if node.is_dir {
+            if self.expanded_dirs.contains(&path) {
+                self.expanded_dirs.remove(path.as_path());
+            } else {
+                self.expanded_dirs.insert(path);
+            }
+            self.rebuild_visible_rows();
         }
-    }
-
-    pub fn expand_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.expanded_dirs.insert(path);
-        self.rebuild_visible_rows();
         cx.notify();
-    }
-
-    pub fn collapse_directory(&mut self, path: &PathBuf, cx: &mut Context<Self>) {
-        self.expanded_dirs.remove(path);
-        self.rebuild_visible_rows();
-        cx.notify();
+        // TODO: open file
     }
 
     pub fn refresh_from_disk(&mut self, cx: &mut Context<Self>) {
@@ -240,13 +237,12 @@ impl Render for FileTree {
             )
             .child(
                 uniform_list("file-tree", self.visible_nodes.len(), {
-                    cx.processor(move |state, range: std::ops::Range<usize>, _, cx| {
+                    cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                         range
                             .into_iter()
                             .map(|i| {
-                                let node = &state.visible_nodes[i];
+                                let node = &this.visible_nodes[i];
                                 let path = node.path.clone();
-                                let is_dir = node.is_dir;
                                 let icon = if !node.is_dir {
                                     Icon::new(IconName::File)
                                 } else if node.is_expanded {
@@ -255,13 +251,12 @@ impl Render for FileTree {
                                     Icon::new(IconName::Folder)
                                 };
                                 ListItem::new(format!("tree-item-{}", node.index))
+                                    .selected(this.selected.as_ref().is_some_and(|p| p == &path))
                                     .w_full()
                                     .p_0()
                                     .h_8()
                                     .on_click(cx.listener(move |this, _, _, cx| {
-                                        if is_dir {
-                                            this.toggle_directory(path.clone(), cx);
-                                        }
+                                        this.activate_node(path.clone(), cx);
                                     }))
                                     .child(
                                         h_flex()

@@ -1,7 +1,8 @@
 use crate::{actions::FILE_TREE_CONTEXT, prelude::*};
 use gpui_kit::{
     UniformListScrollHandle,
-    component::{list::ListItem, progress::Progress},
+    base::ScrollbarAxis,
+    component::{list::ListItem, progress::Progress, scroll::ScrollableElement},
     uniform_list,
 };
 use std::{
@@ -16,9 +17,9 @@ pub struct FileTree {
     pub root: PathBuf,
     pub nodes: HashMap<PathBuf, FileTreeNode>,
     pub expanded_dirs: HashSet<PathBuf>,
-    pub visible_nodes: Vec<VisibleFileNode>,
-    pub focus: FocusHandle,
-    pub scroll_handle: UniformListScrollHandle,
+    visible_nodes: Vec<VisibleFileNode>,
+    focus: FocusHandle,
+    scroll_handle: UniformListScrollHandle,
     loading: bool,
 }
 
@@ -160,7 +161,10 @@ impl FileTree {
                             })
                         })
                         .collect();
-                    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+                    entries.sort_by(|a, b| {
+                        b.1.cmp(&a.1)
+                            .then_with(|| a.2.to_ascii_lowercase().cmp(&b.2.to_ascii_lowercase()))
+                    });
                     for (p, _, _) in entries {
                         children.push(p);
                     }
@@ -223,7 +227,7 @@ impl FileTree {
 }
 
 impl Render for FileTree {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus)
             .key_context(FILE_TREE_CONTEXT)
@@ -236,49 +240,56 @@ impl Render for FileTree {
             )
             .child(
                 uniform_list("file-tree", self.visible_nodes.len(), {
-                    let visible = self.visible_nodes.clone();
-                    move |range, _window, cx| {
-                        let mut items = Vec::with_capacity(range.len());
-                        for node in visible[range].to_vec() {
-                            let icon = if !node.is_dir {
-                                Icon::new(IconName::File)
-                            } else if node.is_expanded {
-                                Icon::new(IconName::FolderOpen)
-                            } else {
-                                Icon::new(IconName::Folder)
-                            };
-                            // let path = node.path.clone();
-                            let item = ListItem::new(format!("tree-item-{}", node.index))
-                                .w_full()
-                                .p_0()
-                                .h_8()
-                                .child(
-                                    h_flex()
-                                        .child(h_flex().children((0..node.depth).into_iter().map(
-                                            |_| {
-                                                div()
-                                                    .h_8()
-                                                    .w_4()
-                                                    .border_color(cx.theme().secondary)
-                                                    .border_r_1()
-                                                    .child("")
-                                            },
-                                        )))
-                                        .child(
-                                            h_flex()
-                                                .pl_2()
-                                                .gap_2()
-                                                .child(icon)
-                                                .child(node.name.clone()),
-                                        ),
-                                );
-                            items.push(item);
-                        }
-                        items
-                    }
+                    cx.processor(move |state, range: std::ops::Range<usize>, _, cx| {
+                        range
+                            .into_iter()
+                            .map(|i| {
+                                let node = &state.visible_nodes[i];
+                                let path = node.path.clone();
+                                let is_dir = node.is_dir;
+                                let icon = if !node.is_dir {
+                                    Icon::new(IconName::File)
+                                } else if node.is_expanded {
+                                    Icon::new(IconName::FolderOpen)
+                                } else {
+                                    Icon::new(IconName::Folder)
+                                };
+                                ListItem::new(format!("tree-item-{}", node.index))
+                                    .w_full()
+                                    .p_0()
+                                    .h_8()
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if is_dir {
+                                            this.toggle_directory(path.clone(), cx);
+                                        }
+                                    }))
+                                    .child(
+                                        h_flex()
+                                            .child(h_flex().children(
+                                                (0..node.depth).into_iter().map(|_| {
+                                                    div()
+                                                        .h_8()
+                                                        .w_4()
+                                                        .border_color(cx.theme().secondary)
+                                                        .border_r_1()
+                                                        .child("")
+                                                }),
+                                            ))
+                                            .child(
+                                                h_flex()
+                                                    .pl_2()
+                                                    .gap_2()
+                                                    .child(icon)
+                                                    .child(node.name.clone()),
+                                            ),
+                                    )
+                            })
+                            .collect()
+                    })
                 })
                 .size_full()
                 .track_scroll(&self.scroll_handle),
             )
+            .scrollbar(&self.scroll_handle, ScrollbarAxis::Both)
     }
 }

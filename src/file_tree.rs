@@ -228,9 +228,12 @@ impl Render for FileTree {
             .track_focus(&self.focus)
             .key_context(FILE_TREE_CONTEXT)
             .size_full()
-            .when(self.loading, |this| {
-                this.child(Progress::new("file-tree-loader").h_1().loading(true))
-            })
+            .child(
+                Progress::new("file-tree-loader")
+                    .h_1()
+                    .loading(self.loading)
+                    .opacity(if self.loading { 1.0 } else { 0.0 }),
+            )
             .child(
                 uniform_list("file-tree", self.visible_nodes.len(), {
                     let visible = self.visible_nodes.clone();

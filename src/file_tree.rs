@@ -1,4 +1,7 @@
-use crate::{actions::FILE_TREE_CONTEXT, prelude::*};
+use crate::{
+    actions::{ActivateFileTreeItem, FILE_TREE_CONTEXT, NextFileTreeItem, PreviousFileTreeItem},
+    prelude::*,
+};
 use gpui_kit::{
     UniformListScrollHandle,
     base::ScrollbarAxis,
@@ -20,7 +23,7 @@ pub struct FileTree {
     visible_nodes: Vec<VisibleFileNode>,
     focus: FocusHandle,
     scroll_handle: UniformListScrollHandle,
-    selected: Option<PathBuf>,
+    selected: Option<usize>,
     loading: bool,
 }
 
@@ -96,20 +99,53 @@ impl FileTree {
         file_tree.refresh_from_disk(cx);
         file_tree
     }
-
-    pub fn activate_node(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let node = &self.nodes[&path];
-        self.selected = Some(path.clone());
-        if node.is_dir {
-            if self.expanded_dirs.contains(&path) {
-                self.expanded_dirs.remove(path.as_path());
-            } else {
-                self.expanded_dirs.insert(path);
-            }
-            self.rebuild_visible_rows();
+    pub fn previous_file_tree_item(
+        &mut self,
+        _: &PreviousFileTreeItem,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(&index) = self.selected.as_ref() {
+            self.selected = Some(index.saturating_sub(1));
+            cx.notify();
         }
-        cx.notify();
-        // TODO: open file
+    }
+    pub fn next_file_tree_item(
+        &mut self,
+        _: &NextFileTreeItem,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(&index) = self.selected.as_ref() {
+            self.selected = Some((index + 1).min(self.visible_nodes.len() - 1));
+            cx.notify();
+        }
+    }
+    pub fn activate_file_tree_item(
+        &mut self,
+        _: &ActivateFileTreeItem,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(&index) = self.selected.as_ref() {
+            self.activate_node(index, cx);
+        }
+    }
+
+    pub fn activate_node(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(node) = self.visible_nodes.get(index) {
+            self.selected = Some(index);
+            if node.is_dir {
+                if self.expanded_dirs.contains(&node.path) {
+                    self.expanded_dirs.remove(&node.path);
+                } else {
+                    self.expanded_dirs.insert(node.path.clone());
+                }
+                self.rebuild_visible_rows();
+            }
+            // TODO: open file
+            cx.notify();
+        }
     }
 
     pub fn refresh_from_disk(&mut self, cx: &mut Context<Self>) {
@@ -197,6 +233,10 @@ impl FileTree {
     }
 
     fn rebuild_visible_rows(&mut self) {
+        let selected_path = self
+            .selected
+            .and_then(|i| self.visible_nodes.get(i))
+            .map(|n| n.path.clone());
         self.visible_nodes.clear();
         let mut stack = Vec::with_capacity(32);
         stack.push((&self.root, 0));
@@ -205,6 +245,9 @@ impl FileTree {
                 continue;
             };
             let is_expanded = self.expanded_dirs.contains(path);
+            if selected_path.as_ref().is_some_and(|p| p == path) {
+                self.selected = Some(self.visible_nodes.len());
+            }
             self.visible_nodes.push(VisibleFileNode {
                 index: self.visible_nodes.len(),
                 path: path.clone(),
@@ -228,6 +271,9 @@ impl Render for FileTree {
         div()
             .track_focus(&self.focus)
             .key_context(FILE_TREE_CONTEXT)
+            .on_action(cx.listener(Self::previous_file_tree_item))
+            .on_action(cx.listener(Self::next_file_tree_item))
+            .on_action(cx.listener(Self::activate_file_tree_item))
             .size_full()
             .child(
                 Progress::new("file-tree-loader")
@@ -242,7 +288,6 @@ impl Render for FileTree {
                             .into_iter()
                             .map(|i| {
                                 let node = &this.visible_nodes[i];
-                                let path = node.path.clone();
                                 let icon = if !node.is_dir {
                                     Icon::new(IconName::File)
                                 } else if node.is_expanded {
@@ -251,12 +296,12 @@ impl Render for FileTree {
                                     Icon::new(IconName::Folder)
                                 };
                                 ListItem::new(format!("tree-item-{}", node.index))
-                                    .selected(this.selected.as_ref().is_some_and(|p| p == &path))
+                                    .selected(this.selected.as_ref().is_some_and(|&ix| ix == i))
                                     .w_full()
                                     .p_0()
                                     .h_8()
                                     .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.activate_node(path.clone(), cx);
+                                        this.activate_node(i, cx);
                                     }))
                                     .child(
                                         h_flex()

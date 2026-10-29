@@ -11,7 +11,7 @@ use std::{
     path::PathBuf,
 };
 
-const BATCH_SIZE: usize = 64;
+const BATCH_SIZE: usize = 64 * 64;
 
 pub struct FileTree {
     pub root: PathBuf,

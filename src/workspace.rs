@@ -1,4 +1,9 @@
-use crate::{actions::WORKSPACE_CONTEXT, file_tree::FileTree, prelude::*};
+use crate::{
+    actions::WORKSPACE_CONTEXT,
+    buffer::Buffer,
+    file_tree::{FileTree, FileTreeEvent},
+    prelude::*,
+};
 use gpui_kit::{
     base::dock::{DockArea, DockLayout},
     component::dock::{DockSkin, panel_handle},
@@ -8,10 +13,12 @@ use std::{path::PathBuf, rc::Rc};
 pub struct Workspace {
     pub root: PathBuf,
     pub name: SharedString,
+    focus: FocusHandle,
     dock_area: Entity<DockArea>,
     _dock_skin: Rc<DockSkin>,
     _file_tree: Entity<FileTree>,
-    focus: FocusHandle,
+    buffers: Vec<Entity<Buffer>>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl Focusable for Workspace {
@@ -43,9 +50,60 @@ impl Workspace {
             root,
             dock_area,
             _dock_skin,
-            _file_tree,
             focus: cx.focus_handle(),
+            _subscriptions: vec![cx.subscribe_in(&_file_tree, window, Self::on_file_tree_event)],
+            buffers: Vec::new(),
+            _file_tree,
         }
+    }
+
+    fn on_file_tree_event(
+        &mut self,
+        _: &Entity<FileTree>,
+        event: &FileTreeEvent,
+        window: &mut Window,
+        cx: &mut Context<Workspace>,
+    ) {
+        match event {
+            FileTreeEvent::OpenEntry(path, name) => {
+                self.new_buffer(path.clone(), name.clone(), window, cx);
+            }
+        }
+    }
+
+    fn new_buffer(
+        &mut self,
+        path: PathBuf,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(buffer) = self.buffers.iter().find(|b| b.read(cx).path == path) {
+            self.activate_buffer(buffer.clone(), window, cx);
+            return;
+        }
+        let buffer: Entity<Buffer> = cx.new(|cx| Buffer::new(path, name, window, cx));
+        self.dock_area.update(cx, |dock_area, cx| {
+            dock_area.add_panel_view(
+                panel_handle(buffer.clone()),
+                gpui_kit::base::dock::DockPlacement::Center,
+                None,
+                window,
+                cx,
+            );
+        });
+        self.buffers.push(buffer);
+    }
+
+    fn activate_buffer(
+        &mut self,
+        buffer: Entity<Buffer>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.dock_area.update(cx, |dock_area, cx| {
+            dock_area.select_panel(panel_handle(buffer).panel_id(cx), window, cx);
+        });
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod buffer;
 pub mod dragged_workspace;
 pub mod file_tree;
 pub mod logging;

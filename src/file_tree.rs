@@ -52,6 +52,11 @@ impl Focusable for FileTree {
     }
 }
 
+pub enum FileTreeEvent {
+    OpenEntry(PathBuf, SharedString),
+}
+
+impl EventEmitter<FileTreeEvent> for FileTree {}
 impl EventEmitter<PanelEvent> for FileTree {}
 
 impl BasePanel for FileTree {
@@ -142,9 +147,13 @@ impl FileTree {
                     self.expanded_dirs.insert(node.path.clone());
                 }
                 self.rebuild_visible_rows();
+                cx.notify();
+            } else {
+                cx.emit(FileTreeEvent::OpenEntry(
+                    node.path.clone(),
+                    node.name.clone(),
+                ));
             }
-            // TODO: open file
-            cx.notify();
         }
     }
 

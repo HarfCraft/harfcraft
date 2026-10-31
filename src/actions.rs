@@ -1,12 +1,14 @@
 use gpui_kit::{App, KeyBinding, actions};
 
 pub const WORKBENCH_CONTEXT: &'static str = "workbench";
+pub const WORKSPACE_CONTEXT: &'static str = "workspace";
+pub const FILE_TREE_CONTEXT: &'static str = "file-tree";
+pub const BUFFER_CONTEXT: &'static str = "buffer";
+
 actions!(WORKBENCH_CONTEXT, [OpenWorkspace]);
 
-pub const WORKSPACE_CONTEXT: &'static str = "workspace";
 actions!(WORKSPACE_CONTEXT, []);
 
-pub const FILE_TREE_CONTEXT: &'static str = "file-tree";
 actions!(
     FILE_TREE_CONTEXT,
     [PreviousFileTreeItem, NextFileTreeItem, ActivateFileTreeItem]

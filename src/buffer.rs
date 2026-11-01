@@ -135,9 +135,8 @@ impl Buffer {
             }
         })
         .detach();
-        let focus = cx.focus_handle();
+        let focus = editor.focus_handle(cx);
         focus.focus(window, cx);
-        editor.focus_handle(cx).focus(window, cx);
         Self {
             path,
             name,

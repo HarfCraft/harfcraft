@@ -4,6 +4,7 @@ pub mod dragged_workspace;
 pub mod file_tree;
 pub mod logging;
 pub mod prelude;
+pub mod preview;
 pub mod storage;
 pub mod workbench;
 pub mod workspace;

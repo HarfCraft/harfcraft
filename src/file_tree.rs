@@ -4,7 +4,7 @@ use crate::{
 };
 use gpui_kit::{
     UniformListScrollHandle,
-    base::ScrollbarAxis,
+    base::{Disableable, ScrollbarAxis},
     component::{list::ListItem, progress::Progress, scroll::ScrollableElement},
     uniform_list,
 };
@@ -73,7 +73,7 @@ impl BasePanel for FileTree {
 
 impl Panel for FileTree {
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        Icon::new(IconName::Folder)
+        "Files"
     }
 
     fn zoom_control(&self, _cx: &App) -> Option<gpui_kit::component::dock::PanelControl> {
@@ -86,6 +86,22 @@ impl Panel for FileTree {
 
     fn title_bar(&self, _cx: &App) -> bool {
         false
+    }
+    fn title_suffix(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
+        Some(
+            Button::new("reload-file-tree")
+                .icon(IconName::RefreshCw)
+                .xsmall()
+                .ghost()
+                .disabled(self.loading)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.refresh_from_disk(cx);
+                })),
+        )
     }
 }
 
@@ -158,6 +174,11 @@ impl FileTree {
     }
 
     pub fn refresh_from_disk(&mut self, cx: &mut Context<Self>) {
+        self.loading = true;
+        self.nodes.clear();
+        self.visible_nodes.clear();
+        cx.notify();
+
         let root = self.root.clone();
         let (tx, rx) = async_channel::unbounded::<Vec<(PathBuf, FileTreeNode)>>();
 

@@ -3,6 +3,7 @@ use crate::{
     buffer::{Buffer, BufferEvent},
     file_tree::{FileTree, FileTreeEvent},
     prelude::*,
+    preview::Preview,
 };
 use gpui_kit::{
     base::dock::{DockArea, DockLayout},
@@ -20,6 +21,7 @@ pub struct Workspace {
     dock_area: Entity<DockArea>,
     _dock_skin: Rc<DockSkin>,
     _file_tree: Entity<FileTree>,
+    _preview: Entity<Preview>,
     buffers: HashMap<PathBuf, Entity<Buffer>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -33,12 +35,19 @@ impl Focusable for Workspace {
 impl Workspace {
     pub fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let _file_tree = cx.new(|cx| FileTree::new(root.clone(), cx));
+        let _preview = cx.new(|cx| Preview::new(root.clone(), window, cx));
         let (dock_area, _dock_skin) = DockSkin::dock_area("workspace-dock", None, window, cx);
         // _dock_skin.set_panel_style(gpui_kit::component::dock::PanelStyle::TabBar, cx);
         dock_area.update(cx, |dock_area, cx| {
             dock_area.set_dock(
                 gpui_kit::base::dock::DockPlacement::Left,
                 DockLayout::tabs().panel_view(panel_handle(_file_tree.clone()), cx),
+                window,
+                cx,
+            );
+            dock_area.set_dock(
+                gpui_kit::base::dock::DockPlacement::Bottom,
+                DockLayout::tabs().panel_view(panel_handle(_preview.clone()), cx),
                 window,
                 cx,
             );
@@ -58,6 +67,7 @@ impl Workspace {
             _subscriptions: vec![cx.subscribe_in(&_file_tree, window, Self::on_file_tree_event)],
             buffers: HashMap::new(),
             _file_tree,
+            _preview,
         }
     }
 

@@ -44,7 +44,7 @@ impl BufferStatus {
         match self {
             BufferStatus::Loading => IconName::Loader,
             BufferStatus::Synced | BufferStatus::Saved => IconName::File,
-            BufferStatus::Dirty => IconName::Dot,
+            BufferStatus::Dirty => IconName::FilePen,
             BufferStatus::Conflict(_) => IconName::RefreshCwOff,
             BufferStatus::Error(_) => IconName::TriangleAlert,
         }

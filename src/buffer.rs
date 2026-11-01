@@ -135,6 +135,9 @@ impl Buffer {
             }
         })
         .detach();
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
+        editor.focus_handle(cx).focus(window, cx);
         Self {
             path,
             name,
@@ -146,7 +149,7 @@ impl Buffer {
                 }
             })],
             editor,
-            focus: cx.focus_handle(),
+            focus,
         }
     }
     pub fn save_buffer(&mut self, _: &SaveBuffer, _: &mut Window, cx: &mut Context<Self>) {

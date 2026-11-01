@@ -1,5 +1,5 @@
 use crate::{
-    actions::{BUFFER_CONTEXT, SaveBuffer},
+    actions::{BUFFER_CONTEXT, CloseBuffer, SaveBuffer},
     prelude::*,
 };
 use gpui_kit::{
@@ -51,6 +51,12 @@ impl BufferStatus {
     }
 }
 
+pub enum BufferEvent {
+    Close(PathBuf),
+}
+
+impl EventEmitter<BufferEvent> for Buffer {}
+
 impl Focusable for Buffer {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus.clone()
@@ -63,10 +69,13 @@ impl BasePanel for Buffer {
     fn panel_name(&self) -> &'static str {
         "Buffer"
     }
+    fn on_removed(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(BufferEvent::Close(self.path.clone()));
+    }
 }
 
 impl Panel for Buffer {
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .gap_1()
             .child(Icon::new(self.status.icon()))
@@ -76,7 +85,13 @@ impl Panel for Buffer {
                     .mr_neg_2()
                     .small()
                     .ghost()
-                    .icon(IconName::Close),
+                    .icon(IconName::Close)
+                    .tooltip_with_action("Close", &CloseBuffer, Some(BUFFER_CONTEXT))
+                    .on_click(
+                        cx.listener(|this, _, _, cx| {
+                            cx.emit(BufferEvent::Close(this.path.clone()))
+                        }),
+                    ),
             )
     }
     fn title_bar(&self, _cx: &App) -> bool {
@@ -147,6 +162,10 @@ impl Buffer {
             }
         }
     }
+
+    pub fn close_buffer(&mut self, _: &CloseBuffer, _: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(BufferEvent::Close(self.path.clone()));
+    }
 }
 
 impl Render for Buffer {
@@ -155,6 +174,7 @@ impl Render for Buffer {
             .track_focus(&self.focus)
             .key_context(BUFFER_CONTEXT)
             .on_action(cx.listener(Self::save_buffer))
+            .on_action(cx.listener(Self::close_buffer))
             .size_full()
             .when_some(self.status.error(), |this, err| {
                 this.child(Alert::error("buffer-error", err).rounded_none())

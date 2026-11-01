@@ -1,14 +1,17 @@
 use crate::{
     actions::WORKSPACE_CONTEXT,
-    buffer::Buffer,
+    buffer::{Buffer, BufferEvent},
     file_tree::{FileTree, FileTreeEvent},
     prelude::*,
 };
 use gpui_kit::{
     base::dock::{DockArea, DockLayout},
-    component::dock::{DockSkin, panel_handle},
+    component::{
+        dock::{DockSkin, panel_handle},
+        status_bar::StatusBar,
+    },
 };
-use std::{path::PathBuf, rc::Rc};
+use std::{collections::HashMap, path::PathBuf, rc::Rc};
 
 pub struct Workspace {
     pub root: PathBuf,
@@ -17,7 +20,7 @@ pub struct Workspace {
     dock_area: Entity<DockArea>,
     _dock_skin: Rc<DockSkin>,
     _file_tree: Entity<FileTree>,
-    buffers: Vec<Entity<Buffer>>,
+    buffers: HashMap<PathBuf, Entity<Buffer>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -52,7 +55,7 @@ impl Workspace {
             _dock_skin,
             focus: cx.focus_handle(),
             _subscriptions: vec![cx.subscribe_in(&_file_tree, window, Self::on_file_tree_event)],
-            buffers: Vec::new(),
+            buffers: HashMap::new(),
             _file_tree,
         }
     }
@@ -78,11 +81,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(buffer) = self.buffers.iter().find(|b| b.read(cx).path == path) {
+        if let Some(buffer) = self.buffers.get(&path) {
             self.activate_buffer(buffer.clone(), window, cx);
             return;
         }
-        let buffer: Entity<Buffer> = cx.new(|cx| Buffer::new(path, name, window, cx));
+        let buffer: Entity<Buffer> = cx.new(|cx| Buffer::new(path.clone(), name, window, cx));
         self.dock_area.update(cx, |dock_area, cx| {
             dock_area.add_panel_view(
                 panel_handle(buffer.clone()),
@@ -92,7 +95,20 @@ impl Workspace {
                 cx,
             );
         });
-        self.buffers.push(buffer);
+        cx.subscribe_in(
+            &buffer,
+            window,
+            |this, buffer, ev: &BufferEvent, window: &mut Window, cx| match ev {
+                BufferEvent::Close(path) => {
+                    this.buffers.remove(path.as_path());
+                    this.dock_area.update(cx, move |dock_area, cx| {
+                        dock_area.remove_panel(buffer.clone(), window, cx);
+                    });
+                }
+            },
+        )
+        .detach();
+        self.buffers.insert(path, buffer);
     }
 
     fn activate_buffer(
@@ -114,5 +130,6 @@ impl Render for Workspace {
             .track_focus(&self.focus)
             .size_full()
             .child(self.dock_area.clone())
+            .child(StatusBar::new().child(format!("{} buffer(s)", self.buffers.len())))
     }
 }

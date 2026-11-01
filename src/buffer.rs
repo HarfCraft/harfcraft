@@ -1,12 +1,49 @@
 use crate::{actions::BUFFER_CONTEXT, prelude::*};
-use gpui_kit::{base::input::EditorState, component::input::Editor};
-use std::path::PathBuf;
+use gpui_kit::{
+    base::input::EditorState,
+    component::{alert::Alert, input::Editor},
+};
+use std::{fs, path::PathBuf};
 
 pub struct Buffer {
     pub path: PathBuf,
     pub name: SharedString,
+    status: BufferStatus,
     editor: Entity<EditorState>,
     focus: FocusHandle,
+}
+
+pub enum BufferStatus {
+    Loading,
+    Synced,
+    Dirty,
+    Conflict(String),
+    Error(SharedString),
+}
+
+impl BufferStatus {
+    pub fn error(&self) -> Option<SharedString> {
+        if let BufferStatus::Error(err) = self {
+            Some(err.clone())
+        } else {
+            None
+        }
+    }
+    pub fn is_readonly(&self) -> bool {
+        match self {
+            BufferStatus::Loading | BufferStatus::Error(_) => true,
+            BufferStatus::Synced | BufferStatus::Dirty | BufferStatus::Conflict(_) => false,
+        }
+    }
+    pub fn icon(&self) -> IconName {
+        match self {
+            BufferStatus::Loading => IconName::Loader,
+            BufferStatus::Synced => IconName::File,
+            BufferStatus::Dirty => IconName::Dot,
+            BufferStatus::Conflict(_) => IconName::RefreshCwOff,
+            BufferStatus::Error(_) => IconName::TriangleAlert,
+        }
+    }
 }
 
 impl Focusable for Buffer {
@@ -25,13 +62,17 @@ impl BasePanel for Buffer {
 
 impl Panel for Buffer {
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex().gap_1().child(self.name.clone()).child(
-            Button::new(format!("close-buffer-{}", self.name.clone()))
-                .mr_neg_2()
-                .small()
-                .ghost()
-                .icon(IconName::Close),
-        )
+        h_flex()
+            .gap_1()
+            .child(Icon::new(self.status.icon()))
+            .child(self.name.clone())
+            .child(
+                Button::new(format!("close-buffer-{}", self.name.clone()))
+                    .mr_neg_2()
+                    .small()
+                    .ghost()
+                    .icon(IconName::Close),
+            )
     }
     fn title_bar(&self, _cx: &App) -> bool {
         true
@@ -48,10 +89,37 @@ impl Buffer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let editor = cx.new(|cx| EditorState::new(window, cx));
+        let file_path = path.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { fs::read_to_string(file_path) })
+                .await;
+            match result {
+                Ok(contents) => {
+                    _ = this.update_in(cx, |buffer, window, cx| {
+                        buffer.editor.update(cx, |editor, cx| {
+                            editor.set_value(contents, window, cx);
+                        });
+                        buffer.status = BufferStatus::Synced;
+                        cx.notify();
+                    });
+                }
+                Err(err) => {
+                    _ = this.update(cx, |buffer, cx| {
+                        buffer.status = BufferStatus::Error(err.to_string().into());
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .detach();
         Self {
             path,
             name,
-            editor: cx.new(|cx| EditorState::new(window, cx)),
+            status: BufferStatus::Loading,
+            editor,
             focus: cx.focus_handle(),
         }
     }
@@ -59,10 +127,18 @@ impl Buffer {
 
 impl Render for Buffer {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        v_flex()
             .track_focus(&self.focus)
             .key_context(BUFFER_CONTEXT)
             .size_full()
-            .child(Editor::new(&self.editor).bordered(false).size_full())
+            .when_some(self.status.error(), |this, err| {
+                this.child(Alert::error("buffer-error", err).rounded_none())
+            })
+            .child(
+                Editor::new(&self.editor)
+                    .readonly(self.status.is_readonly())
+                    .bordered(false)
+                    .size_full(),
+            )
     }
 }

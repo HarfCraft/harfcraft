@@ -77,12 +77,13 @@ impl BasePanel for Buffer {
 impl Panel for Buffer {
     fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
-            .gap_1()
-            .child(Icon::new(self.status.icon()))
+            .gap_2()
+            .child(Icon::new(self.status.icon()).small())
             .child(self.name.clone())
             .child(
                 Button::new(format!("close-buffer-{}", self.name.clone()))
                     .mr_neg_2()
+                    .ml_neg_1()
                     .small()
                     .ghost()
                     .icon(IconName::Close)

@@ -43,6 +43,7 @@ impl Workspace {
                 cx,
             );
         });
+        _dock_skin.set_panel_style(gpui_kit::component::dock::PanelStyle::TabBar, cx);
 
         Self {
             name: SharedString::from(

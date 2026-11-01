@@ -14,6 +14,8 @@ actions!(
     [PreviousFileTreeItem, NextFileTreeItem, ActivateFileTreeItem]
 );
 
+actions!(BUFFER_CONTEXT, [SaveBuffer]);
+
 pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new(
         "ctrl-o",
@@ -21,6 +23,7 @@ pub fn init(cx: &mut App) {
         Some(WORKBENCH_CONTEXT),
     )]);
     init_file_tree(cx);
+    init_buffer(cx);
 }
 
 fn init_file_tree(cx: &mut App) {
@@ -29,4 +32,8 @@ fn init_file_tree(cx: &mut App) {
         KeyBinding::new("down", NextFileTreeItem, Some(FILE_TREE_CONTEXT)),
         KeyBinding::new("enter", ActivateFileTreeItem, Some(FILE_TREE_CONTEXT)),
     ]);
+}
+
+fn init_buffer(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new("ctrl-s", SaveBuffer, Some(BUFFER_CONTEXT))]);
 }

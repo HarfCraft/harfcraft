@@ -1,6 +1,9 @@
-use crate::{actions::BUFFER_CONTEXT, prelude::*};
+use crate::{
+    actions::{BUFFER_CONTEXT, SaveBuffer},
+    prelude::*,
+};
 use gpui_kit::{
-    base::input::EditorState,
+    base::input::{EditorState, InputEvent},
     component::{alert::Alert, input::Editor},
 };
 use std::{fs, path::PathBuf};
@@ -11,12 +14,14 @@ pub struct Buffer {
     status: BufferStatus,
     editor: Entity<EditorState>,
     focus: FocusHandle,
+    _subscriptions: Vec<Subscription>,
 }
 
 pub enum BufferStatus {
     Loading,
     Synced,
     Dirty,
+    Saved,
     Conflict(String),
     Error(SharedString),
 }
@@ -32,13 +37,13 @@ impl BufferStatus {
     pub fn is_readonly(&self) -> bool {
         match self {
             BufferStatus::Loading | BufferStatus::Error(_) => true,
-            BufferStatus::Synced | BufferStatus::Dirty | BufferStatus::Conflict(_) => false,
+            _ => false,
         }
     }
     pub fn icon(&self) -> IconName {
         match self {
             BufferStatus::Loading => IconName::Loader,
-            BufferStatus::Synced => IconName::File,
+            BufferStatus::Synced | BufferStatus::Saved => IconName::File,
             BufferStatus::Dirty => IconName::Dot,
             BufferStatus::Conflict(_) => IconName::RefreshCwOff,
             BufferStatus::Error(_) => IconName::TriangleAlert,
@@ -119,17 +124,37 @@ impl Buffer {
             path,
             name,
             status: BufferStatus::Loading,
+            _subscriptions: vec![cx.subscribe(&editor, |this, _, ev: &InputEvent, cx| {
+                if let InputEvent::Change = ev {
+                    this.status = BufferStatus::Dirty;
+                    cx.notify();
+                }
+            })],
             editor,
             focus: cx.focus_handle(),
+        }
+    }
+    pub fn save_buffer(&mut self, _: &SaveBuffer, _: &mut Window, cx: &mut Context<Self>) {
+        let contents = self.editor.read(cx).value().to_string();
+        match fs::write(&self.path, contents) {
+            Ok(_) => {
+                self.status = BufferStatus::Saved;
+                cx.notify();
+            }
+            Err(err) => {
+                self.status = BufferStatus::Error(err.to_string().into());
+                cx.notify();
+            }
         }
     }
 }
 
 impl Render for Buffer {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .track_focus(&self.focus)
             .key_context(BUFFER_CONTEXT)
+            .on_action(cx.listener(Self::save_buffer))
             .size_full()
             .when_some(self.status.error(), |this, err| {
                 this.child(Alert::error("buffer-error", err).rounded_none())
